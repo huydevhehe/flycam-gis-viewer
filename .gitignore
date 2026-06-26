@@ -49,3 +49,14 @@ GoogleConfig.json
 /extract-dem.js
 /extract-dem-test.js
 
+# File chứa thông tin đăng nhập database, không đưa lên git
+/.env
+
+# Folder tile tạm khi xử lý TIF, ảnh thật đã nằm trong database
+/anh
+
+# File/folder thuộc cộng đồng đóng góp Cesium gốc, không liên quan tới phần tự làm
+/CONTRIBUTORS.md
+/CODE_OF_CONDUCT.md
+/.github
+
