@@ -1,72 +1,248 @@
-# CesiumJS
+# Flycam GIS Viewer
 
-[![Build Status](https://github.com/CesiumGS/cesium/actions/workflows/dev.yml/badge.svg)](https://github.com/CesiumGS/cesium/actions/workflows/dev.yml)
-[![npm](https://img.shields.io/npm/v/cesium)](https://www.npmjs.com/package/cesium)
-[![Docs](https://img.shields.io/badge/docs-online-orange.svg)](https://cesium.com/learn/)
+A 3D web GIS platform for visualizing aerial drone (flycam) survey imagery on an interactive globe, built on top of [CesiumJS](https://cesium.com/platform/cesiumjs/). The project replaces a slow, error-prone manual workflow (hand-typed coordinates, static image folders) with an automated pipeline that converts raw GeoTIFF survey data straight into a database-backed map service.
 
-![Cesium](https://github.com/CesiumGS/cesium/wiki/logos/Cesium_Logo_Color.jpg)
+## Highlights
 
-CesiumJS is a JavaScript library for creating 3D globes and 2D maps in a web browser without a plugin. It uses WebGL for hardware-accelerated graphics, and is cross-platform, cross-browser, and tuned for dynamic-data visualization.
+- **Automated GeoTIFF → Tile → Database pipeline.** A single script (`process_all_tifs.js`) takes raw aerial `.tif` files, reprojects/cuts them into Web Mercator XYZ tiles with GDAL, verifies the tile count, loads them into PostgreSQL, and removes the source files — turning a multi-step manual process into one command.
+- **Database-backed imagery serving.** Map tiles are stored as binary data in PostgreSQL and streamed through an Express API (`/tiles/:project/:z/:x/:y.png`), so the app no longer depends on imagery files living on disk.
+- **Zero-config project list.** New surveys appear automatically in the UI as soon as they're processed — the frontend fetches `/api/projects` and builds the project list, layer toggles, and map rectangles dynamically. No code changes needed to onboard a new dataset.
+- **Coordinate-system aware.** Correctly handles the Vietnamese national geodetic system (VN‑2000 / TM‑3 105°45', EPSG:9210), including the datum shift to WGS84 — avoiding the silent positioning errors common in naive reprojection.
+- **Production-scale data reduction.** Processed 80+ survey datasets (tens of GB of raw aerial imagery) down to a compact, queryable PostgreSQL dataset, cutting on-disk footprint by roughly 75% while keeping full visual fidelity at zoom levels 15–21.
+- **Built-in GIS tooling.** Distance & area measurement, elevation/DEM point overlays, satellite/street basemap switching, and camera fly-to navigation per project.
 
-Built on open formats, CesiumJS is designed for robust interoperability and scaling for massive datasets.
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| 3D Globe Rendering | CesiumJS |
+| Backend / API | Node.js, Express |
+| Database | PostgreSQL (binary tile storage) |
+| Geospatial Processing | GDAL (`gdal raster tile`), proj4 |
+| Frontend | Vanilla JS, dynamic DOM rendering |
+
+## How It Works
+
+```
+Raw GeoTIFF (.tif)
+      │  gdal raster tile  (reproject + cut into XYZ tiles)
+      ▼
+Tile folder (temporary)
+      │  process_all_tifs.js  (verify + load)
+      ▼
+PostgreSQL  ──  tiles table (binary PNG data)
+            ──  projects table (bbox, zoom range, title)
+      │
+      ▼
+Express API  /api/projects, /tiles/:project/:z/:x/:y.png
+      │
+      ▼
+CesiumJS frontend (dynamic project list + map layers)
+```
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js >= 22
+- PostgreSQL (tested on v17)
+- GDAL with the `gdal raster tile` command (e.g. via [OSGeo4W](https://www.osgeo.org/projects/osgeo4w/))
+
+### Setup
+
+```bash
+git clone https://github.com/huydevhehe/flycam-gis-viewer.git
+cd flycam-gis-viewer
+npm install
+```
+
+Create a `.env` file (see `.env.example`) with your local database credentials:
+
+```
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=postgres
+DB_PASSWORD=your_password
+DB_NAME=cesium_gis
+```
+
+Create the database and tables:
+
+```sql
+CREATE DATABASE cesium_gis;
+
+CREATE TABLE tiles (
+  project_key TEXT NOT NULL,
+  z INTEGER NOT NULL,
+  x INTEGER NOT NULL,
+  y INTEGER NOT NULL,
+  data BYTEA NOT NULL,
+  PRIMARY KEY (project_key, z, x, y)
+);
+
+CREATE TABLE projects (
+  project_key TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  min_zoom INTEGER NOT NULL,
+  max_zoom INTEGER NOT NULL,
+  west DOUBLE PRECISION NOT NULL,
+  south DOUBLE PRECISION NOT NULL,
+  east DOUBLE PRECISION NOT NULL,
+  north DOUBLE PRECISION NOT NULL
+);
+```
+
+### Importing aerial survey data
+
+Drop one or more `.tif` files into the project root, then run:
+
+```bash
+node process_all_tifs.js
+```
+
+Every new `.tif` file is cut into tiles, loaded into PostgreSQL, and removed automatically. Already-processed projects are skipped.
+
+### Running the app
+
+```bash
+npm run start
+```
+
+Open `http://localhost:8080/Apps/HelloWorld.html` — every processed survey shows up automatically in the layer panel.
+
+## Project Structure
+
+```
+Apps/js/app.js              # Frontend bootstrap: fetches /api/projects, builds UI
+Apps/js/MapManager.js        # Manages Cesium imagery layers & basemap switching
+server.js                    # Express server + /api/projects and /tiles/* routes
+db.js                        # PostgreSQL connection pool
+import_tiles_to_db.js        # Tile import logic (shared module + CLI)
+process_all_tifs.js          # Batch GeoTIFF → tile → database pipeline
+```
 
 ---
 
-[**Examples**](https://sandcastle.cesium.com/) :earth_asia: [**Docs**](https://cesium.com/learn/cesiumjs-learn/) :earth_americas: [**Website**](https://cesium.com/cesiumjs) :earth_africa: [**Forum**](https://community.cesium.com/) :earth_asia: [**User Stories**](https://cesium.com/user-stories/)
+# Flycam GIS Viewer (Tiếng Việt)
 
----
+Hệ thống bản đồ 3D hiển thị ảnh chụp từ thiết bị bay (flycam/drone) trên nền [CesiumJS](https://cesium.com/platform/cesiumjs/). Dự án thay thế quy trình thủ công cũ (nhập tay tọa độ, lưu ảnh rời rạc theo folder) bằng một pipeline tự động, chuyển trực tiếp dữ liệu GeoTIFF gốc thành dịch vụ bản đồ vận hành trên database.
 
-## :rocket: Get started
+## Điểm nổi bật
 
-Visit the [Downloads page](https://cesium.com/downloads/) to download a pre-built copy of CesiumJS.
+- **Pipeline tự động GeoTIFF → Tile → Database.** Chỉ với 1 lệnh (`process_all_tifs.js`), hệ thống tự cắt ảnh `.tif` gốc thành tile theo chuẩn Web Mercator XYZ bằng GDAL, kiểm tra số lượng tile để đảm bảo nạp đủ, đưa vào PostgreSQL, rồi xóa file gốc — biến một quy trình nhiều bước thủ công thành một câu lệnh duy nhất.
+- **Phục vụ ảnh bản đồ trực tiếp từ database.** Tile ảnh được lưu dạng nhị phân trong PostgreSQL và phát ra qua API Express (`/tiles/:project/:z/:x/:y.png`), ứng dụng không còn phụ thuộc vào file ảnh nằm trên ổ đĩa.
+- **Không cần sửa code khi thêm dự án.** Dự án mới xử lý xong sẽ tự xuất hiện trên giao diện — frontend gọi `/api/projects` để tự dựng danh sách dự án, công cụ bật/tắt lớp ảnh, và vùng hiển thị trên bản đồ.
+- **Hiểu đúng hệ tọa độ Việt Nam.** Xử lý chính xác hệ tọa độ quốc gia VN-2000/TM-3 múi 105°45' (EPSG:9210), bao gồm cả phép chuyển đổi datum sang WGS84 — tránh lỗi lệch vị trí âm thầm thường gặp khi chuyển đổi tọa độ không đúng cách.
+- **Giảm dung lượng dữ liệu ở quy mô thực tế.** Đã xử lý hơn 80 bộ dữ liệu khảo sát (hàng chục GB ảnh gốc) thành một tập dữ liệu PostgreSQL gọn nhẹ, có thể truy vấn — giảm khoảng 75% dung lượng lưu trữ mà vẫn giữ nguyên độ chi tiết hiển thị ở các mức zoom 15–21.
+- **Tích hợp sẵn công cụ GIS.** Đo khoảng cách & diện tích, hiển thị điểm độ cao (DEM), chuyển đổi bản đồ nền vệ tinh/đường phố, bay camera nhanh tới từng dự án.
 
-### npm & yarn
+## Công nghệ sử dụng
 
-If you’re building your application using a module bundler such as Webpack, Parcel, or Rollup, you can install CesiumJS via the [`cesium` npm package](https://www.npmjs.com/package/cesium):
+| Tầng | Công nghệ |
+|---|---|
+| Hiển thị bản đồ 3D | CesiumJS |
+| Backend / API | Node.js, Express |
+| Database | PostgreSQL (lưu tile dạng nhị phân) |
+| Xử lý dữ liệu địa lý | GDAL (`gdal raster tile`), proj4 |
+| Frontend | JavaScript thuần, dựng UI động |
 
-```sh
-npm install cesium --save
+## Cách hoạt động
+
+```
+File GeoTIFF gốc (.tif)
+      │  gdal raster tile  (chuyển hệ tọa độ + cắt tile XYZ)
+      ▼
+Folder tile (tạm thời)
+      │  process_all_tifs.js  (kiểm tra + nạp)
+      ▼
+PostgreSQL  ──  bảng tiles (dữ liệu PNG nhị phân)
+            ──  bảng projects (vùng hiển thị, mức zoom, tên dự án)
+      │
+      ▼
+API Express  /api/projects, /tiles/:project/:z/:x/:y.png
+      │
+      ▼
+Frontend CesiumJS (danh sách dự án + lớp bản đồ tự dựng)
 ```
 
-Then, import CesiumJS in your app code. Import individual modules to benefit from tree shaking optimizations through most build tools:
+## Bắt đầu
 
-```js
-import { Viewer } from "cesium";
-import "cesium/Build/Cesium/Widgets/widgets.css";
+### Yêu cầu
 
-const viewer = new Viewer("cesiumContainer");
+- Node.js >= 22
+- PostgreSQL (đã test trên v17)
+- GDAL có lệnh `gdal raster tile` (cài qua [OSGeo4W](https://www.osgeo.org/projects/osgeo4w/))
+
+### Cài đặt
+
+```bash
+git clone https://github.com/huydevhehe/flycam-gis-viewer.git
+cd flycam-gis-viewer
+npm install
 ```
 
-In addition to the `cesium` package, CesiumJS is also [distributed as scoped npm packages for better dependency management](https://cesium.com/blog/2022/12/07/modular-structure-in-cesiumjs/):
+Tạo file `.env` (tham khảo `.env.example`) với thông tin database của bạn:
 
-- [`@cesium/engine`](./packages/engine/README.md) - CesiumJS's core, rendering, and data APIs
-- [`@cesium/widgets`](./packages/widgets/README.md) - A widgets library for use with CesiumJS
+```
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=postgres
+DB_PASSWORD=mat_khau_cua_ban
+DB_NAME=cesium_gis
+```
 
-### What next?
+Tạo database và bảng:
 
-See our [Quickstart Guide](https://cesium.com/learn/cesiumjs-learn/cesiumjs-quickstart/) for more information on getting a CesiumJS app up and running.
+```sql
+CREATE DATABASE cesium_gis;
 
-Instructions for serving local data are in the CesiumJS
-[Offline Guide](./Documentation/OfflineGuide/README.md).
+CREATE TABLE tiles (
+  project_key TEXT NOT NULL,
+  z INTEGER NOT NULL,
+  x INTEGER NOT NULL,
+  y INTEGER NOT NULL,
+  data BYTEA NOT NULL,
+  PRIMARY KEY (project_key, z, x, y)
+);
 
-Interested in contributing? See [CONTRIBUTING.md](CONTRIBUTING.md). :heart:
+CREATE TABLE projects (
+  project_key TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  min_zoom INTEGER NOT NULL,
+  max_zoom INTEGER NOT NULL,
+  west DOUBLE PRECISION NOT NULL,
+  south DOUBLE PRECISION NOT NULL,
+  east DOUBLE PRECISION NOT NULL,
+  north DOUBLE PRECISION NOT NULL
+);
+```
 
-## :green_book: License
+### Nạp dữ liệu ảnh khảo sát
 
-[Apache 2.0](http://www.apache.org/licenses/LICENSE-2.0.html). CesiumJS is free for both commercial and non-commercial use.
+Bỏ 1 hoặc nhiều file `.tif` vào thư mục gốc dự án, rồi chạy:
 
-## :earth_americas: Where does the Global 3D Content come from?
+```bash
+node process_all_tifs.js
+```
 
-The Cesium platform follows an [open-core business model](https://cesium.com/why-cesium/open-ecosystem/cesium-business-model/) with open source runtime engines such as CesiumJS and optional commercial subscription to Cesium ion.
+Mọi file `.tif` mới sẽ được cắt tile, nạp vào PostgreSQL, và tự xóa file gốc. Dự án đã xử lý rồi sẽ tự được bỏ qua.
 
-CesiumJS can stream [3D content such as terrain, imagery, and 3D Tiles from the commercial Cesium ion platform](https://cesium.com/platform/cesium-ion/content/) alongside open standards from other offline or online services. We provide Cesium ion as the quickest option for all users to get up and running, but you are free to use any combination of content sources with CesiumJS that you please.
+### Chạy ứng dụng
 
-Bring your own data for tiling, hosting, and streaming from Cesium ion. [Using Cesium ion](https://cesium.com/ion/signup/) helps support CesiumJS development.
+```bash
+npm run start
+```
 
-## :white_check_mark: Features
+Mở `http://localhost:8080/Apps/HelloWorld.html` — mọi dự án đã xử lý sẽ tự hiện trong danh sách lớp dữ liệu.
 
-- Stream in 3D Tiles and other standard formats from Cesium ion or another source
-- Visualize and analyze on a high-precision WGS84 globe
-- Share with users on desktop or mobile
+## Cấu trúc dự án
 
-See more in the [CesiumJS Features Checklist](https://github.com/CesiumGS/cesium/wiki/CesiumJS-Features-Checklist).
+```
+Apps/js/app.js              # Khởi tạo frontend: gọi /api/projects, dựng UI
+Apps/js/MapManager.js        # Quản lý lớp ảnh Cesium & chuyển bản đồ nền
+server.js                    # Server Express + route /api/projects và /tiles/*
+db.js                        # Kết nối PostgreSQL
+import_tiles_to_db.js        # Logic nạp tile (module dùng chung + CLI)
+process_all_tifs.js          # Pipeline hàng loạt GeoTIFF → tile → database
+```
+**Developed by Nguyễn Quốc Huy**
