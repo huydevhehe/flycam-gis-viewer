@@ -9,12 +9,13 @@ import path from "path";
 import pool from "./db.js";
 import { importTilesForProject, countPngTiles } from "./import_tiles_to_db.js";
 
-const ROOT_DIR = path.resolve(".."); // D:\Cesium File TIF
+const ROOT_DIR = process.env.TIF_DIR || path.resolve(".."); // D:\Cesium File TIF (Win) hoac /home/tvr (Linux)
 const TILE_OUTPUT_DIR = path.resolve("anh");
 const MIN_ZOOM = 15;
 const MAX_ZOOM = 21;
-const GDAL_EXE = "C:\\OSGeo4W\\bin\\gdal.exe";
-const GDAL_DATA = "C:\\OSGeo4W\\apps\\gdal\\share\\gdal";
+const isWindows = process.platform === "win32";
+const GDAL_EXE = process.env.GDAL_EXE || (isWindows ? "C:\\OSGeo4W\\bin\\gdal.exe" : "gdal");
+const GDAL_DATA = process.env.GDAL_DATA || (isWindows ? "C:\\OSGeo4W\\apps\\gdal\\share\\gdal" : null);
 
 function cutTiles(tifPath, outputDir) {
   fs.mkdirSync(path.dirname(outputDir), { recursive: true });
@@ -30,7 +31,8 @@ function cutTiles(tifPath, outputDir) {
     `-i "${tifPath}"`,
     `-o "${outputDir}"`,
   ].join(" ");
-  execSync(cmd, { env: { ...process.env, GDAL_DATA }, stdio: "pipe" });
+  const env = GDAL_DATA ? { ...process.env, GDAL_DATA } : { ...process.env };
+  execSync(cmd, { env, stdio: "pipe" });
 }
 
 // Đọc leaflet.html GDAL tự sinh, lấy bbox WGS84 thật từ dòng fitBounds([[lat1,lon1],[lat2,lon2]])
