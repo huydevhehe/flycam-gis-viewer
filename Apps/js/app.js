@@ -1,6 +1,7 @@
 // Danh sách dự án GIS được tải động từ database (bảng "projects") qua API /api/projects,
 // không còn khai báo cứng trong code nữa — thêm dự án mới chỉ cần chạy process_all_tifs.js.
 let projectsConfig = {};
+let groupsConfig = [];
 let viewer, mapManager, measureTool, elevationTool, defaultRect;
 
 function buildProjectsConfig(rows) {
@@ -20,23 +21,53 @@ function buildProjectsConfig(rows) {
   return config;
 }
 
-// Dựng động khối UI (tên dự án + checkbox Ảnh Flycam) cho từng dự án vào #projectList
-function renderProjectList(config) {
+// Gom các dự án thành nhóm theo group_key (null = hiển thị riêng lẻ)
+function buildGroups(rows) {
+  const groupMap = new Map();
+  const ungrouped = [];
+  for (const row of rows) {
+    if (row.group_key) {
+      if (!groupMap.has(row.group_key)) {
+        groupMap.set(row.group_key, { groupKey: row.group_key, title: row.group_title, projects: [] });
+      }
+      groupMap.get(row.group_key).projects.push(row.project_key);
+    } else {
+      ungrouped.push({ groupKey: null, title: row.title, projects: [row.project_key] });
+    }
+  }
+  return [...groupMap.values(), ...ungrouped];
+}
+
+// Tính bbox bao phủ toàn bộ các project trong nhóm
+function groupBbox(group) {
+  let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+  for (const pk of group.projects) {
+    const p = projectsConfig[pk];
+    if (!p) continue;
+    const [pw, ps, pe, pn] = p.boundaryCoords;
+    w = Math.min(w, pw); s = Math.min(s, ps);
+    e = Math.max(e, pe); n = Math.max(n, pn);
+  }
+  return w === Infinity ? null : [w, s, e, n];
+}
+
+// Dựng động khối UI — 1 nút per nhóm (hoặc per dự án đơn lẻ)
+function renderProjectList(groups) {
   const container = document.getElementById("projectList");
   if (!container) return;
   container.innerHTML = "";
 
-  for (const key in config) {
-    const project = config[key];
-    const group = document.createElement("div");
-    group.className = "project-group";
-    group.innerHTML = `
+  for (const group of groups) {
+    const id = group.groupKey || group.projects[0];
+    const el = document.createElement("div");
+    el.className = "project-group";
+    el.innerHTML = `
       <div class="project-header">
-        <div class="project-info-click" data-project="${key}" title="Click để bay về dự án">
+        <div class="project-info-click" data-group-id="${id}" title="Click để bay về vùng này">
           <svg class="project-icon" viewBox="0 0 24 24">
             <path d="M12 2L2 22h20L12 2zm0 3.99L19.53 19H4.47L12 5.99z"/>
           </svg>
-          <span>${project.title}</span>
+          <span>${group.title}</span>
         </div>
         <div class="project-toggle-btn" title="Đóng/Mở lớp dữ liệu">
           <svg class="arrow-icon" viewBox="0 0 24 24">
@@ -46,23 +77,28 @@ function renderProjectList(config) {
       </div>
       <div class="project-layers">
         <label class="menu-checkbox-item">
-          <input type="checkbox" id="flycam_${key}" checked>
+          <input type="checkbox" id="flycam_group_${id}" checked>
           <span class="custom-checkbox"></span>
           <span>Ảnh Flycam</span>
         </label>
       </div>
     `;
-    container.appendChild(group);
+    container.appendChild(el);
   }
 }
 
-// Gắn sự kiện cho các phần tử UI vừa dựng động (riêng theo từng dự án)
+// Gắn sự kiện cho các phần tử UI vừa dựng động (theo nhóm)
 function attachProjectEvents() {
   document.querySelectorAll(".project-info-click").forEach((infoDiv) => {
     infoDiv.addEventListener("click", (e) => {
       e.stopPropagation();
-      const projKey = infoDiv.getAttribute("data-project");
-      mapManager.flyToProject(projKey);
+      const id = infoDiv.getAttribute("data-group-id");
+      const group = groupsConfig.find(g => (g.groupKey || g.projects[0]) === id);
+      if (!group) return;
+      const bbox = groupBbox(group);
+      if (bbox) {
+        viewer.camera.flyTo({ destination: Cesium.Rectangle.fromDegrees(...bbox), duration: 2.0 });
+      }
     });
   });
 
@@ -70,24 +106,18 @@ function attachProjectEvents() {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       const group = btn.closest(".project-group");
-      if (group) {
-        group.classList.toggle("collapsed");
-      }
+      if (group) group.classList.toggle("collapsed");
     });
   });
 
-  for (const projKey in projectsConfig) {
-    const flycamCb = document.getElementById(`flycam_${projKey}`);
-    if (flycamCb) {
-      flycamCb.addEventListener("change", (e) => {
-        mapManager.setFlycamVisible(projKey, e.target.checked);
-      });
-    }
-
-    const elevationCb = document.getElementById(`elevation_${projKey}`);
-    if (elevationCb) {
-      elevationCb.addEventListener("change", (e) => {
-        elevationTool.setVisible(projKey, e.target.checked);
+  for (const group of groupsConfig) {
+    const id = group.groupKey || group.projects[0];
+    const cb = document.getElementById(`flycam_group_${id}`);
+    if (cb) {
+      cb.addEventListener("change", (e) => {
+        for (const projKey of group.projects) {
+          mapManager.setFlycamVisible(projKey, e.target.checked);
+        }
       });
     }
   }
@@ -245,6 +275,7 @@ async function init() {
   const response = await fetch("/api/projects");
   const rows = await response.json();
   projectsConfig = buildProjectsConfig(rows);
+  groupsConfig = buildGroups(rows);
 
   // 2. Khởi tạo đối tượng Cesium Viewer
   viewer = new Cesium.Viewer("cesiumContainer", {
@@ -260,12 +291,14 @@ async function init() {
     creditContainer: document.createElement("div"),
   });
 
-  // 3. Cho camera bay tới vị trí dự án đầu tiên khi load trang
-  const firstKey = Object.keys(projectsConfig)[0];
-  const defaultProject = projectsConfig[firstKey];
-  if (defaultProject) {
-    defaultRect = Cesium.Rectangle.fromDegrees(...defaultProject.boundaryCoords);
-    viewer.camera.flyTo({ destination: defaultRect, duration: 3.0 });
+  // 3. Cho camera bay tới bbox của nhóm đầu tiên khi load trang
+  const firstGroup = groupsConfig[0];
+  if (firstGroup) {
+    const bbox = groupBbox(firstGroup);
+    if (bbox) {
+      defaultRect = Cesium.Rectangle.fromDegrees(...bbox);
+      viewer.camera.flyTo({ destination: defaultRect, duration: 3.0 });
+    }
   }
 
   // 4. Khởi tạo các module quản lý bản đồ
@@ -280,7 +313,7 @@ async function init() {
   }
 
   // 5. Dựng UI danh sách dự án + gắn toàn bộ sự kiện
-  renderProjectList(projectsConfig);
+  renderProjectList(groupsConfig);
   attachProjectEvents();
   attachStaticUiEvents();
 }

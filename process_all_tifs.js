@@ -9,7 +9,14 @@ import path from "path";
 import pool from "./db.js";
 import { importTilesForProject, countPngTiles } from "./import_tiles_to_db.js";
 
-const ROOT_DIR = process.env.TIF_DIR || path.resolve(".."); // D:\Cesium File TIF (Win) hoac /home/tvr (Linux)
+const ROOT_DIR = process.env.TIF_DIR || (isWindows ? path.resolve("..") : path.resolve("."));
+
+function detectGroup(projectKey) {
+  if (projectKey.endsWith("_DHT") || projectKey.endsWith("_TTN")) {
+    return { group_key: "dht_ttn", group_title: "DHT & TTN" };
+  }
+  return { group_key: null, group_title: null };
+}
 const TILE_OUTPUT_DIR = path.resolve("anh");
 const MIN_ZOOM = 15;
 const MAX_ZOOM = 21;
@@ -103,22 +110,16 @@ async function main() {
         );
       }
 
+      const { group_key, group_title } = detectGroup(projectKey);
       await pool.query(
-        `INSERT INTO projects (project_key, title, min_zoom, max_zoom, west, south, east, north)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `INSERT INTO projects (project_key, title, min_zoom, max_zoom, west, south, east, north, group_key, group_title)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          ON CONFLICT (project_key) DO UPDATE SET
            title = EXCLUDED.title, min_zoom = EXCLUDED.min_zoom, max_zoom = EXCLUDED.max_zoom,
-           west = EXCLUDED.west, south = EXCLUDED.south, east = EXCLUDED.east, north = EXCLUDED.north`,
-        [
-          projectKey,
-          `Dự án ${projectKey}`,
-          MIN_ZOOM,
-          MAX_ZOOM,
-          bbox.west,
-          bbox.south,
-          bbox.east,
-          bbox.north,
-        ],
+           west = EXCLUDED.west, south = EXCLUDED.south, east = EXCLUDED.east, north = EXCLUDED.north,
+           group_key = EXCLUDED.group_key, group_title = EXCLUDED.group_title`,
+        [projectKey, `Dự án ${projectKey}`, MIN_ZOOM, MAX_ZOOM,
+         bbox.west, bbox.south, bbox.east, bbox.north, group_key, group_title],
       );
 
       removeDir(outputDir);
