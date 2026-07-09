@@ -9,20 +9,20 @@ import path from "path";
 import pool from "./db.js";
 import { importTilesForProject, countPngTiles } from "./import_tiles_to_db.js";
 
+const isWindows = process.platform === "win32";
+const GDAL_EXE = process.env.GDAL_EXE || (isWindows ? "C:\\OSGeo4W\\bin\\gdal.exe" : "gdal");
+const GDAL_DATA = process.env.GDAL_DATA || (isWindows ? "C:\\OSGeo4W\\apps\\gdal\\share\\gdal" : null);
 const ROOT_DIR = process.env.TIF_DIR || (isWindows ? path.resolve("..") : path.resolve("."));
+const TILE_OUTPUT_DIR = path.resolve("anh");
+const MIN_ZOOM = 15;
+const MAX_ZOOM = 21;
 
 function detectGroup(projectKey) {
-  if (projectKey.endsWith("_DHT") || projectKey.endsWith("_TTN")) {
+  if (projectKey.endsWith("_DHT") || projectKey.endsWith("_TTN") || projectKey.endsWith("_THT")) {
     return { group_key: "dht_ttn", group_title: "DHT & TTN" };
   }
   return { group_key: null, group_title: null };
 }
-const TILE_OUTPUT_DIR = path.resolve("anh");
-const MIN_ZOOM = 15;
-const MAX_ZOOM = 21;
-const isWindows = process.platform === "win32";
-const GDAL_EXE = process.env.GDAL_EXE || (isWindows ? "C:\\OSGeo4W\\bin\\gdal.exe" : "gdal");
-const GDAL_DATA = process.env.GDAL_DATA || (isWindows ? "C:\\OSGeo4W\\apps\\gdal\\share\\gdal" : null);
 
 function cutTiles(tifPath, outputDir) {
   fs.mkdirSync(path.dirname(outputDir), { recursive: true });
