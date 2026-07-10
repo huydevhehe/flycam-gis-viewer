@@ -7,7 +7,7 @@ set -e
 cd /home/tvr/flycam-gis-viewer
 
 echo "[1/3] Dung app hien tai..."
-pkill -f "node server.js" 2>/dev/null && echo "  -> Da dung." || echo "  -> App chua chay, bo qua."
+fuser -k 8000/tcp 2>/dev/null && echo "  -> Da dung." || echo "  -> App chua chay, bo qua."
 sleep 1
 
 echo "[2/3] Git pull code moi nhat..."
