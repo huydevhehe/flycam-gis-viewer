@@ -212,7 +212,20 @@ const throttle = (callback) => {
   // Danh sách dự án (metadata: tọa độ, zoom...) lấy từ database, để Cesium tự dựng UI/layer
   app.get("/api/projects", async (req, res) => {
     try {
-      const result = await pool.query("SELECT * FROM projects ORDER BY project_key");
+      const showGroup = process.env.SHOW_GROUP;
+      let result;
+      if (showGroup === "ungrouped") {
+        result = await pool.query(
+          "SELECT * FROM projects WHERE group_key IS NULL ORDER BY project_key"
+        );
+      } else if (showGroup) {
+        result = await pool.query(
+          "SELECT * FROM projects WHERE group_key = $1 ORDER BY project_key",
+          [showGroup]
+        );
+      } else {
+        result = await pool.query("SELECT * FROM projects ORDER BY project_key");
+      }
       res.json(result.rows);
     } catch (err) {
       console.error("Lỗi lấy danh sách dự án từ DB:", err);
